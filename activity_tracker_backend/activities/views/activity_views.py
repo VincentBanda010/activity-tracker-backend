@@ -1,60 +1,43 @@
 # activities/views/activity_views.py
 
-from rest_framework import viewsets, permissions
-from rest_framework.authentication import TokenAuthentication, SessionAuthentication
+from rest_framework import viewsets, status
+from rest_framework.response import Response
 from activities.data.serializers import ActivitySerializer
 from activities.data.models import ActivityModel
-from activities.domain.repositories import ActivityRepositoryInterface
-from activities.use_cases.get_activities import GetActivitiesUseCase
-from activities.use_cases.create_activity import CreateActivityUseCase
-from activities.use_cases.update_activity import UpdateActivityUseCase
-from activities.use_cases.delete_activity import DeleteActivityUseCase
-from activities.data.repositories.activity_repository_impl import ActivityRepository
-from activities.domain.entities.activity import Activity
-from rest_framework.response import Response
-from rest_framework import status
 
-class ActivityViewSet(viewsets.ViewSet):
+class ActivityViewSet(viewsets.ModelViewSet):
+    serializer_class = ActivitySerializer
+    queryset = ActivityModel.objects.all().order_by('-date')
 
-    def list(self, request):
-        repository = ActivityRepository()
-        use_case = GetActivitiesUseCase(repository)
-        activities = use_case.execute(user_id=request.user.id)
-        serializer = ActivitySerializer(activities, many=True)
-        return Response(serializer.data)
-
-    def create(self, request):
-        repository = ActivityRepository()
-        use_case = CreateActivityUseCase(repository)
-        title = request.data.get('title')
-        description = request.data.get('description')
-        activity = use_case.execute(user_id=request.user.id, title=title, description=description)
-        serializer = ActivitySerializer(activity)
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        activity = serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    def retrieve(self, request, pk=None):
-        # Implement retrieve logic using use cases
-        pass
+    def retrieve(self, request, pk=None, *args, **kwargs):
+        try:
+            activity = ActivityModel.objects.get(pk=pk)
+            serializer = self.get_serializer(activity)
+            return Response(serializer.data)
+        except ActivityModel.DoesNotExist:
+            return Response({'error': 'Activity not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    def update(self, request, pk=None):
-        repository = ActivityRepository()
-        use_case = UpdateActivityUseCase(repository)
-        title = request.data.get('title')
-        description = request.data.get('description')
-        activity = Activity(
-            id=pk,
-            user_id=request.user.id,
-            title=title,
-            description=description,
-            date=None,  # Handle date accordingly
-            created_at=None  # Handle created_at accordingly
-        )
-        updated_activity = use_case.execute(activity)
-        serializer = ActivitySerializer(updated_activity)
-        return Response(serializer.data)
+    def update(self, request, pk=None, *args, **kwargs):
+        partial = kwargs.pop('partial', False)  # Extract 'partial' from kwargs
+        try:
+            activity = ActivityModel.objects.get(pk=pk)
+            serializer = self.get_serializer(activity, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
+        except ActivityModel.DoesNotExist:
+            return Response({'error': 'Activity not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    def destroy(self, request, pk=None):
-        repository = ActivityRepository()
-        use_case = DeleteActivityUseCase(repository)
-        use_case.execute(activity_id=pk)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    def destroy(self, request, pk=None, *args, **kwargs):
+        try:
+            activity = ActivityModel.objects.get(pk=pk)
+            activity.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ActivityModel.DoesNotExist:
+            return Response({'error': 'Activity not found'}, status=status.HTTP_404_NOT_FOUND)
